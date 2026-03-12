@@ -181,9 +181,6 @@ Scoring Rules:
 
 Total Score Range: 0 to 4
 
-
---- 3.2 Risk Level Mapping ---
-
 Score 0-1:
     Status: "Normal"
     Color: Green
@@ -214,11 +211,6 @@ Score 3-4:
         score += 1
     
     # Final score: 0 ≤ score ≤ 4
-
-
-================================================================================
-4. MATHEMATICAL OPERATIONS SUMMARY
-================================================================================
 
 Distance Calculation:
     Euclidean Distance = √[(x2 - x1)² + (y2 - y1)²]
