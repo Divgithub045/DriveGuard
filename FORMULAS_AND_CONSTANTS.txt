@@ -1,0 +1,280 @@
+================================================================================
+                    FORMULAS AND CONSTANTS REFERENCE
+                    Drowsiness Detection System
+================================================================================
+
+================================================================================
+1. CONSTANTS
+================================================================================
+
+--- Facial Landmark Indices (MediaPipe's 468-point face model) ---
+
+LEFT_EYE = [33, 160, 158, 133, 153, 144]
+    Description: 6 landmark points around the left eye
+
+RIGHT_EYE = [362, 385, 387, 263, 373, 380]
+    Description: 6 landmark points around the right eye
+
+MOUTH = [13, 14, 78, 308]
+    Description: Upper, lower, left, right mouth points
+
+NOSE_TIP = 1
+    Description: Nose tip landmark index
+
+CHIN = 152
+    Description: Chin landmark index
+
+
+--- Detection Thresholds (Tuned for Drowsiness Detection) ---
+
+EAR_THRESHOLD = 0.21
+    Description: Eye Aspect Ratio threshold
+    Usage: Below this value indicates eyes are closing
+    Note: Normal open eye EAR ≈ 0.3, closed eye EAR ≈ 0.1-0.15
+
+MAR_THRESHOLD = 0.6
+    Description: Mouth Aspect Ratio threshold
+    Usage: Above this value indicates yawning
+
+PITCH_THRESHOLD = 20
+    Description: Head pitch angle threshold (in degrees)
+    Usage: Above this value indicates head nodding down
+
+
+================================================================================
+2. FORMULAS
+================================================================================
+
+--- 2.1 Euclidean Distance ---
+
+Formula:
+    distance = √[(x2 - x1)² + (y2 - y1)²]
+
+Parameters:
+    p1: Point 1 coordinates (x1, y1)
+    p2: Point 2 coordinates (x2, y2)
+
+Returns:
+    Float: Euclidean distance between two points
+
+Implementation:
+    Uses scipy.spatial.distance.euclidean()
+
+
+--- 2.2 Eye Aspect Ratio (EAR) ---
+
+Formula:
+                |p2 - p6| + |p3 - p5|
+    EAR = ─────────────────────────────
+                  2 × |p1 - p4|
+
+Where:
+    - Numerator: Sum of vertical eye distances (eye height)
+      • |p2 - p6|: Vertical distance 1
+      • |p3 - p5|: Vertical distance 2
+    - Denominator: 2 times horizontal eye distance (eye width)
+      • |p1 - p4|: Horizontal distance
+
+Interpretation:
+    • When eye is open:   EAR ≈ 0.3
+    • When eye is closed: EAR ≈ 0.1-0.15
+    • EAR < 0.21: Eyes are closing (drowsiness indicator)
+
+Parameters:
+    eye: List of 6 (x, y) coordinates for eye landmarks
+         [p1, p2, p3, p4, p5, p6]
+
+Returns:
+    Float: Eye aspect ratio
+
+Implementation:
+    A = euclidean_distance(eye[1], eye[5])
+    B = euclidean_distance(eye[2], eye[4])
+    C = euclidean_distance(eye[0], eye[3])
+    EAR = (A + B) / (2.0 * C)
+
+Note:
+    - Final EAR is average of left and right eye EARs
+    - Formula: EAR_final = (EAR_left + EAR_right) / 2.0
+
+
+--- 2.3 Mouth Aspect Ratio (MAR) ---
+
+Formula:
+              |upper - lower|
+    MAR = ──────────────────────
+              |left - right|
+
+Where:
+    - Numerator: Vertical distance between upper and lower mouth points
+    - Denominator: Horizontal distance between left and right mouth points
+
+Interpretation:
+    • Higher MAR value = Mouth more open (yawning)
+    • MAR > 0.6: Yawning detected (drowsiness indicator)
+
+Parameters:
+    landmarks: MediaPipe landmark object
+    w, h: Frame width and height (for coordinate conversion)
+    mouth_indices: List of 4 indices [upper, lower, left, right]
+
+Returns:
+    Float: Mouth aspect ratio
+
+Coordinate Conversion:
+    pixel_x = normalized_x × frame_width
+    pixel_y = normalized_y × frame_height
+
+Implementation:
+    upper = (landmarks[mouth_indices[0]].x × w, landmarks[mouth_indices[0]].y × h)
+    lower = (landmarks[mouth_indices[1]].x × w, landmarks[mouth_indices[1]].y × h)
+    left  = (landmarks[mouth_indices[2]].x × w, landmarks[mouth_indices[2]].y × h)
+    right = (landmarks[mouth_indices[3]].x × w, landmarks[mouth_indices[3]].y × h)
+    MAR = euclidean_distance(upper, lower) / euclidean_distance(left, right)
+
+
+--- 2.4 Head Pitch Angle ---
+
+Formula:
+    pitch = atan2(dy, dx) × (180 / π)
+
+Where:
+    dx = chin_x - nose_x
+    dy = chin_y - nose_y
+
+Interpretation:
+    • Positive angle: Head tilted down (drowsy indicator)
+    • Negative angle: Head tilted up
+    • pitch > 20°: Head nodding down (drowsiness indicator)
+
+Parameters:
+    landmarks: MediaPipe landmark object
+    w, h: Frame width and height (for coordinate conversion)
+    nose_tip: Nose landmark index
+    chin: Chin landmark index
+
+Returns:
+    Float: Pitch angle in degrees
+
+Implementation:
+    nose = (landmarks[nose_tip].x × w, landmarks[nose_tip].y × h)
+    chin = (landmarks[chin].x × w, landmarks[chin].y × h)
+    dx = chin[0] - nose[0]
+    dy = chin[1] - nose[1]
+    pitch = arctan2(dy, dx) × (180 / π)
+
+Note:
+    - atan2 gives angle from horizontal axis
+    - Result is converted from radians to degrees
+
+
+================================================================================
+3. DROWSINESS SCORING SYSTEM
+================================================================================
+
+--- 3.1 Score Calculation ---
+
+Scoring Rules:
+    1. If EAR < EAR_THRESHOLD (0.21):     Add 2 points (eyes closing - strongest indicator)
+    2. If MAR > MAR_THRESHOLD (0.6):      Add 1 point (yawning)
+    3. If pitch > PITCH_THRESHOLD (20):   Add 1 point (head nodding)
+
+Total Score Range: 0 to 4
+
+
+--- 3.2 Risk Level Mapping ---
+
+Score 0-1:
+    Status: "Normal"
+    Color: Green
+    Interpretation: Alert and awake
+
+Score 2:
+    Status: "Moderate Risk"
+    Color: Yellow
+    Interpretation: Showing signs of drowsiness
+
+Score 3-4:
+    Status: "High Drowsiness Risk"
+    Color: Red
+    Interpretation: Dangerously drowsy, immediate attention required
+
+
+--- 3.3 Score Calculation Formula ---
+
+    score = 0
+    
+    if EAR < 0.21:
+        score += 2
+    
+    if MAR > 0.6:
+        score += 1
+    
+    if pitch > 20:
+        score += 1
+    
+    # Final score: 0 ≤ score ≤ 4
+
+
+================================================================================
+4. MATHEMATICAL OPERATIONS SUMMARY
+================================================================================
+
+Distance Calculation:
+    Euclidean Distance = √[(x2 - x1)² + (y2 - y1)²]
+
+Aspect Ratios:
+    EAR = (vertical_dist_1 + vertical_dist_2) / (2 × horizontal_dist)
+    MAR = vertical_distance / horizontal_distance
+
+Angle Calculation:
+    pitch = arctan2(dy, dx) × (180 / π)
+
+Coordinate Normalization:
+    pixel_coordinate = normalized_coordinate × dimension_size
+
+
+================================================================================
+5. MEDIAPIPE CONFIGURATION
+================================================================================
+
+FaceMesh Parameters:
+    • refine_landmarks = True
+        - Enables iris landmark detection
+    
+    • min_detection_confidence = 0.5
+        - Minimum confidence (0.0-1.0) for initial face detection
+    
+    • min_tracking_confidence = 0.5
+        - Minimum confidence (0.0-1.0) for face tracking between frames
+
+
+================================================================================
+6. KEY METRICS AND THEIR RANGES
+================================================================================
+
+EAR (Eye Aspect Ratio):
+    • Open eye: ~0.3
+    • Closing eye: ~0.2-0.25
+    • Closed eye: ~0.1-0.15
+    • Threshold: 0.21 (below = drowsy)
+
+MAR (Mouth Aspect Ratio):
+    • Normal: <0.6
+    • Yawning: >0.6
+    • Threshold: 0.6 (above = drowsy)
+
+Head Pitch:
+    • Normal: -10° to 10°
+    • Nodding down: >20°
+    • Threshold: 20° (above = drowsy)
+
+Drowsiness Score:
+    • Alert: 0-1
+    • Moderate: 2
+    • High Risk: 3-4
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================
