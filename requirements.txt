@@ -1,0 +1,13 @@
+# Web framework
+fastapi==0.109.0          # Modern async web framework
+uvicorn[standard]==0.27.0 # ASGI server (runs FastAPI)
+websockets==12.0          # WebSocket support
+python-multipart==0.0.6   # For file uploads (future use)
+
+# Computer vision & AI (YOUR WORKING VERSIONS)
+opencv-python>=4.8.0      # Computer vision library (your version)
+mediapipe==0.10.13        # Google's ML solutions (your exact version)
+
+# Math & data (YOUR WORKING VERSIONS)
+numpy>=1.24.0             # Array operations (your version)
+scipy>=1.11.0             # Scientific computing (your version)
