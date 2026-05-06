@@ -9,7 +9,7 @@ import time
 from playsound import playsound
 from ultralytics import YOLO
 import threading
-import pythoncom
+#import pythoncom
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -38,13 +38,13 @@ yolo_model = load_yolo()
 
 def speak_warning():
     import pyttsx3
-    pythoncom.CoInitialize()
+    #pythoncom.CoInitialize()
 
-    engine = pyttsx3.init()
-    engine.setProperty('rate', 160)
-    engine.say("Please do not use phone while driving")
-    engine.runAndWait()
-    engine.stop()
+    # engine = pyttsx3.init()
+    # engine.setProperty('rate', 160)
+    # engine.say("Please do not use phone while driving")
+    # engine.runAndWait()
+    # engine.stop()
 
     from gtts import gTTS
     import os
