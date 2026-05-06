@@ -6,10 +6,14 @@ from scipy.spatial import distance as dist
 import math
 from collections import deque
 import time
+import json
+import datetime
+import os
 from playsound import playsound
 from ultralytics import YOLO
 import threading
 #import pythoncom
+import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -38,13 +42,13 @@ yolo_model = load_yolo()
 
 def speak_warning():
     import pyttsx3
-    #pythoncom.CoInitialize()
+   # pythoncom.CoInitialize()
 
-    # engine = pyttsx3.init()
-    # engine.setProperty('rate', 160)
-    # engine.say("Please do not use phone while driving")
-    # engine.runAndWait()
-    # engine.stop()
+   # engine = pyttsx3.init()
+   # engine.setProperty('rate', 160)
+   # engine.say("Please do not use phone while driving")
+   # engine.runAndWait()
+   # engine.stop()
 
     from gtts import gTTS
     import os
@@ -181,11 +185,38 @@ with st.sidebar:
     
     if 'running' not in st.session_state:
         st.session_state.running = False
+    if 'logs' not in st.session_state:
+        st.session_state.logs = []
+    if 'frame_count' not in st.session_state:
+        st.session_state.frame_count = 0
+    if 'report' not in st.session_state:
+        st.session_state.report = None
+    if 'pdf_bytes' not in st.session_state:
+        st.session_state.pdf_bytes = None
+    if 'prev_time' not in st.session_state:
+        st.session_state.prev_time = None
+    if 'cap' not in st.session_state:
+        st.session_state.cap = None
+    if 'session_id' not in st.session_state:
+        st.session_state.session_id = None
+    if 'log_path' not in st.session_state:
+        st.session_state.log_path = None
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("▶️ Start",  width="stretch"):
             st.session_state.running = True
+            st.session_state.logs = []
+            st.session_state.frame_count = 0
+            st.session_state.report = None
+            st.session_state.pdf_bytes = None
+            st.session_state.prev_time = None
+            if st.session_state.cap is not None:
+                st.session_state.cap.release()
+            st.session_state.cap = None
+            st.session_state.session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            st.session_state.log_path = None
+            st.session_state.started_at = datetime.datetime.now()
     with col2:
         if st.button("⏹️ Stop",  width="stretch"):
             st.session_state.running = False
@@ -217,6 +248,180 @@ if 'alert_count' not in st.session_state:
     st.session_state.alert_count = 0
 if 'last_voice' not in st.session_state:
     st.session_state.last_voice = 0
+if 'started_at' not in st.session_state:
+    st.session_state.started_at = None
+if 'pdf_bytes' not in st.session_state:
+    st.session_state.pdf_bytes = None
+if 'prev_time' not in st.session_state:
+    st.session_state.prev_time = None
+if 'cap' not in st.session_state:
+    st.session_state.cap = None
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = None
+if 'log_path' not in st.session_state:
+    st.session_state.log_path = None
+
+LOG_EVERY_N_FRAMES = 5
+CONTINUOUS_PHONE_RUN = 5
+def generate_report(logs):
+    total = len(logs)
+    if total == 0:
+        return None
+
+    drowsy_frames = sum(1 for item in logs if item.get('score', 0) >= 2)
+    alert_frames = sum(1 for item in logs if item.get('score', 0) < 2)
+    phone_frames = sum(1 for item in logs if item.get('phone', False))
+
+    continuous_phone_frames = 0
+    run = 0
+    for item in logs:
+        if item.get('phone', False):
+            run += 1
+        else:
+            if run >= CONTINUOUS_PHONE_RUN:
+                continuous_phone_frames += run
+            run = 0
+    if run >= CONTINUOUS_PHONE_RUN:
+        continuous_phone_frames += run
+
+    drowsy_pct = (drowsy_frames / total) * 100
+    alert_pct = (alert_frames / total) * 100
+    phone_pct = (phone_frames / total) * 100
+    continuous_phone_pct = (continuous_phone_frames / total) * 100
+    safe_pct = max(0.0, 100.0 - (drowsy_pct * 0.6 + phone_pct * 0.3 + alert_pct * 0.1))
+
+    return {
+        'total_samples': total,
+        'drowsy_pct': drowsy_pct,
+        'alert_pct': alert_pct,
+        'phone_pct': phone_pct,
+        'continuous_phone_pct': continuous_phone_pct,
+        'safety_score': safe_pct
+    }
+
+def build_pdf_bytes(lines):
+    def escape_pdf(text):
+        return text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+
+    line_height = 14
+    content_lines = []
+    for line in lines:
+        content_lines.append(f"{escape_pdf(line)}")
+
+    content = "BT /F1 12 Tf 50 760 Td "
+    for i, line in enumerate(content_lines):
+        if i > 0:
+            content += f"0 -{line_height} Td "
+        content += f"({line}) Tj "
+    content += "ET"
+
+    objects = []
+    objects.append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+    objects.append("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+    objects.append("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n")
+    objects.append("4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n")
+    objects.append(f"5 0 obj\n<< /Length {len(content)} >>\nstream\n{content}\nendstream\nendobj\n")
+
+    xref_positions = []
+    pdf = "%PDF-1.4\n"
+    for obj in objects:
+        xref_positions.append(len(pdf))
+        pdf += obj
+    xref_start = len(pdf)
+    pdf += "xref\n0 6\n0000000000 65535 f \n"
+    for pos in xref_positions:
+        pdf += f"{pos:010d} 00000 n \n"
+    pdf += "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n"
+    pdf += f"{xref_start}\n%%EOF\n"
+
+    return pdf.encode("ascii", errors="ignore")
+
+def render_report():
+    if not st.session_state.report:
+        return
+
+    st.markdown("---")
+    st.subheader("Driver Performance Report")
+    report = st.session_state.report
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Drowsiness %", f"{report['drowsy_pct']:.1f}%")
+        st.metric("Phone Usage %", f"{report['phone_pct']:.1f}%")
+    with col2:
+        st.metric("Alert %", f"{report['alert_pct']:.1f}%")
+        st.metric("Continuous Phone %", f"{report['continuous_phone_pct']:.1f}%")
+    with col3:
+        st.metric("Safety Score", f"{report['safety_score']:.1f}/100")
+
+    chart_data = {
+        "Drowsiness %": report['drowsy_pct'],
+        "Phone Usage %": report['phone_pct'],
+        "Alert %": report['alert_pct'],
+        "Continuous Phone %": report['continuous_phone_pct']
+    }
+    st.bar_chart(chart_data)
+
+    if st.session_state.log_path:
+        st.caption(f"Session log path: {st.session_state.log_path}")
+
+    if st.session_state.pdf_bytes:
+        st.download_button(
+            label="Download Full Session Log (PDF)",
+            data=st.session_state.pdf_bytes,
+            file_name="driver_session_log.pdf",
+            mime="application/pdf"
+        )
+    labels = ["Drowsiness %", "Alert %"]
+    values = [
+        report["drowsy_pct"],
+        report["alert_pct"],
+    ]
+
+    fig, ax = plt.subplots(figsize=(2.2, 2.2), facecolor="black")  # or "none" for transparent
+    ax.set_facecolor("none")  # or "none"
+
+    colors = ["#1E6FD9", "#63B3FF"]  # two blues
+    wedges, texts, autotexts = ax.pie(
+        values,
+        labels=labels,
+        autopct="%1.1f%%",
+        startangle=90,
+        colors=colors,
+        textprops={"color": "white", "fontsize": 4, "weight": "regular","rotation":90,"ha":"center","va":"center"}
+    )
+
+    ax.axis("equal")
+
+    left, mid, right = st.columns([1, 2, 1])
+    with mid:
+        st.pyplot(fig, transparent=True)  
+def finalize_report():
+    if st.session_state.report or not st.session_state.logs:
+        return
+
+    st.session_state.report = generate_report(st.session_state.logs)
+    if st.session_state.report:
+        report = st.session_state.report
+        log_lines = [
+            "Driver Monitoring Session Log",
+            f"Started: {st.session_state.started_at.isoformat(timespec='seconds') if st.session_state.started_at else 'N/A'}",
+            f"Samples: {report['total_samples']}",
+            "",
+            "Report Summary:",
+            f"Drowsiness %: {report['drowsy_pct']:.1f}",
+            f"Alert %: {report['alert_pct']:.1f}",
+            f"Phone Usage %: {report['phone_pct']:.1f}",
+            f"Continuous Phone %: {report['continuous_phone_pct']:.1f}",
+            f"Safety Score: {report['safety_score']:.1f}",
+            "",
+            "Full Session Log:",
+        ]
+
+        for item in st.session_state.logs:
+            log_lines.append(json.dumps(item, ensure_ascii=True))
+
+        st.session_state.pdf_bytes = build_pdf_bytes(log_lines)
 
 if st.session_state.running:
     cap = cv2.VideoCapture(0)
@@ -265,8 +470,52 @@ if st.session_state.running:
                 else:
                     alert_area.success("✅ Driver is alert")
 
-            time.sleep(0.01)
+            st.session_state.frame_count += 1
+            if st.session_state.frame_count % LOG_EVERY_N_FRAMES == 0:
+                log_item = {
+                    'timestamp': datetime.datetime.now().isoformat(timespec='seconds'),
+                    'EAR': metrics.get('EAR'),
+                    'MAR': metrics.get('MAR'),
+                    'pitch': metrics.get('pitch'),
+                    'score': metrics.get('score', 0),
+                    'phone': metrics.get('phone', False)
+                }
+                st.session_state.logs.append(log_item)
+
+            time.sleep(0.02)
 
         cap.release()
+        st.session_state.report = generate_report(st.session_state.logs)
+        if st.session_state.report:
+            report = st.session_state.report
+            log_lines = [
+                "Driver Monitoring Session Log",
+                f"Started: {st.session_state.started_at.isoformat(timespec='seconds') if st.session_state.started_at else 'N/A'}",
+                f"Samples: {report['total_samples']}",
+                "",
+                "Report Summary:",
+                f"Drowsiness %: {report['drowsy_pct']:.1f}",
+                f"Alert %: {report['alert_pct']:.1f}",
+                f"Phone Usage %: {report['phone_pct']:.1f}",
+                f"Continuous Phone %: {report['continuous_phone_pct']:.1f}",
+                f"Safety Score: {report['safety_score']:.1f}",
+                "",
+                "Full Session Log:",
+            ]
+
+            for item in st.session_state.logs:
+                log_lines.append(json.dumps(item, ensure_ascii=True))
+
+            os.makedirs("logs", exist_ok=True)
+            session_name = st.session_state.session_id or "session"
+            log_path = os.path.join("logs", f"{session_name}.json")
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                json.dump(st.session_state.logs, log_file, ensure_ascii=True, indent=2)
+            st.session_state.log_path = log_path
+
+            st.session_state.pdf_bytes = build_pdf_bytes(log_lines)
+            render_report()
 else:
     st.info("▶️ Click 'Start' in the sidebar to begin monitoring")
+    finalize_report()
+    render_report()
