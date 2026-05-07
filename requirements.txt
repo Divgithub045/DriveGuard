@@ -11,4 +11,4 @@ mediapipe==0.10.13        # Google's ML solutions (your exact version)
 # Math & data (YOUR WORKING VERSIONS)
 numpy>=1.24.0             # Array operations (your version)
 scipy>=1.11.0             # Scientific computing (your version)
-pip install playsound==1.2.2
+playsound==1.2.2

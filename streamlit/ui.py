@@ -168,12 +168,35 @@ def process_frame(frame, face_mesh):
         label = yolo_model.names[cls]
 
         if label == "cell phone" and box.conf[0] > 0.5:
-            metrics['phone'] = True
 
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            cv2.rectangle(frame, (x1,y1), (x2,y2), (0,0,255), 2)
-            cv2.putText(frame, "PHONE", (x1, y1-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+
+            # Calculate width and height
+            width = x2 - x1
+            height = y2 - y1
+            # Check phone dimensions
+            if 0 <= width <= 150 and 150 <= height <= 250:
+                metrics['phone'] = True
+                text = "Phone"
+                color = (0, 255, 0)
+
+            else:
+                metrics['foreign_object'] = True
+                text = "Foreign Object"
+                color = (0, 0, 255)
+
+            # Draw bounding box
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+
+            cv2.putText(
+                frame,
+                f"{text} ({width}x{height}px)",
+                (x1, y1 - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                color,
+                2
+            )
 
     return frame, metrics
 
