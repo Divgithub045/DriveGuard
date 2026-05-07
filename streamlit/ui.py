@@ -57,7 +57,7 @@ def speak_warning():
 
     if not os.path.exists(file_path):
         tts = gTTS(
-            text="कृपया गाड़ी चलाते समय फोन का उपयोग न करें",
+            text="वाहन चलाते समय किसी भी वस्तु, फोन इत्यादि का प्रयोग न करें।",
             lang='hi'
         )
         tts.save(file_path)
